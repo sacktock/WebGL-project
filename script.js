@@ -2,18 +2,23 @@
 // Vertex shader program
 var VSHADER_SOURCE =
   'attribute vec4 a_Position;\n' +
+  'attribute vec4 a_Color;\n' +
   'attribute vec4 a_Normal;\n' +
+  'attribute vec2 a_TexCoords;\n' +
   'uniform mat4 u_MvpMatrix;\n' +
-  'uniform mat4 u_NormalMatrix;\n' +
+  'uniform mat4 u_ModelMatrix;\n' +    // Model matrix
+  'uniform mat4 u_NormalMatrix;\n' +   // Transformation matrix of the normal
   'varying vec4 v_Color;\n' +
+  'varying vec3 v_Normal;\n' +
+  'varying vec2 v_TexCoords;\n' +
+  'varying vec3 v_Position;\n' +
   'void main() {\n' +
   '  gl_Position = u_MvpMatrix * a_Position;\n' +
-  // Shading calculation to make the arm look three-dimensional
-  '  vec3 lightDirection = normalize(vec3(0.0, 0.5, 0.7));\n' + // Light direction
-  '  vec4 color = vec4(1.0, 0.4, 0.0, 1.0);\n' +  // Robot color
-  '  vec3 normal = normalize((u_NormalMatrix * a_Normal).xyz);\n' +
-  '  float nDotL = max(dot(normal, lightDirection), 0.0);\n' +
-  '  v_Color = vec4(color.rgb * nDotL + vec3(0.15), color.a);\n' +
+     // Calculate the vertex position in the world coordinate
+  '  v_Position = vec3(u_ModelMatrix * a_Position);\n' +
+  '  v_Normal = normalize(vec3(u_NormalMatrix * a_Normal));\n' +
+  '  v_Color = a_Color;\n' + 
+  '  v_TexCoords = a_TexCoords;\n' +
   '}\n';
 
 // Fragment shader program
@@ -21,9 +26,32 @@ var FSHADER_SOURCE =
   '#ifdef GL_ES\n' +
   'precision mediump float;\n' +
   '#endif\n' +
+  'uniform bool u_UseTextures;\n' +    // Texture enable/disable flag
+  'uniform vec3 u_LightColor;\n' +     // Light color
+  'uniform vec3 u_LightPosition;\n' +  // Position of the light source
+  'uniform vec3 u_AmbientLight;\n' +   // Ambient light color
+  'varying vec3 v_Normal;\n' +
+  'varying vec3 v_Position;\n' +
   'varying vec4 v_Color;\n' +
+  'uniform sampler2D u_Sampler;\n' +
+  'varying vec2 v_TexCoords;\n' +
   'void main() {\n' +
-  '  gl_FragColor = v_Color;\n' +
+     // Normalize the normal because it is interpolated and not 1.0 in length any more
+  '  vec3 normal = normalize(v_Normal);\n' +
+     // Calculate the light direction and make its length 1.
+  '  vec3 lightDirection = normalize(u_LightPosition - v_Position);\n' +
+     // The dot product of the light direction and the orientation of a surface (the normal)
+  '  float nDotL = max(dot(lightDirection, normal), 0.0);\n' +
+     // Calculate the final color from diffuse reflection and ambient reflection
+  '  vec3 diffuse;\n' +
+  '  if (u_UseTextures) {\n' +
+  '     vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
+  '     diffuse = u_LightColor * TexColor.rgb * nDotL * 1.2;\n' +
+  '  } else {\n' +
+  '     diffuse = u_LightColor * v_Color.rgb * nDotL;\n' +
+  '  }\n' +
+  '  vec3 ambient = u_AmbientLight * v_Color.rgb;\n' +
+  '  gl_FragColor = vec4(diffuse + ambient, v_Color.a);\n' +
   '}\n';
 
 function main() {
@@ -51,16 +79,31 @@ function main() {
   }
 
   // Set the clear color and enable the depth test
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.clearColor(0.5, 0.9, 1.0, 1.0);
   gl.enable(gl.DEPTH_TEST);
 
   // Get the storage locations of uniform variables
+  var u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
   var u_MvpMatrix = gl.getUniformLocation(gl.program, 'u_MvpMatrix');
   var u_NormalMatrix = gl.getUniformLocation(gl.program, 'u_NormalMatrix');
-  if (!u_MvpMatrix || !u_NormalMatrix) {
+  var u_LightColor = gl.getUniformLocation(gl.program, 'u_LightColor');
+  var u_LightPosition = gl.getUniformLocation(gl.program, 'u_LightPosition');
+  var u_AmbientLight = gl.getUniformLocation(gl.program, 'u_AmbientLight');
+  if (!u_ModelMatrix || !u_MvpMatrix || !u_NormalMatrix || !u_LightColor || !u_LightPosition　|| !u_AmbientLight) { 
     console.log('Failed to get the storage location');
     return;
   }
+  
+  var modelMatrix = new Matrix4();
+
+  gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+  
+  // Set the light color (white)
+  gl.uniform3f(u_LightColor, 1.0, 1.0, 1.0);
+  // Set the light direction (in the world coordinate)
+  gl.uniform3f(u_LightPosition, 2.0, 3.0, 2.5);
+  // Set the ambient light
+  gl.uniform3f(u_AmbientLight, 0.3, 0.3, 0.3);
 
   // Calculate the view projection matrix
   var viewProjMatrix = new Matrix4();
@@ -68,12 +111,14 @@ function main() {
   viewProjMatrix.lookAt(20.0,30.0, 50.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
   document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix); };
-  draw(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
 }
 
 var MOVE_STEP = 1.0;
 var ANGLE_STEP = 3.0;
 var g_rotate_angle = 0.0;
+var chair_move = 0.0;
+var CHAIR_MOVE_STEP = 0.25;
 
 function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
   var x_View_Pos = 0.0;
@@ -95,11 +140,18 @@ function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
       break;
     case 37: 
       g_rotate_angle += ANGLE_STEP;
+	  sofa_rotate_angle += ANGLE_STEP;
       break;
+	case 65:
+	  chair_move += CHAIR_MOVE_STEP;
+	  break;
+	case 68:
+	  chair_move -= CHAIR_MOVE_STEP;
+	  break;
   }
   
   // Draw the robot arm
-  draw(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
 }
 
 function initVertexBuffers(gl) {
@@ -113,6 +165,9 @@ function initVertexBuffers(gl) {
     0.5, 0.0,-0.5, -0.5, 0.0,-0.5, -0.5, 1.0,-0.5,  0.5, 1.0,-0.5  // v4-v7-v6-v5 back
   ]);
 
+
+// Colors
+ 
   // Normal
   var normals = new Float32Array([
     0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0, // v0-v1-v2-v3 front
@@ -121,6 +176,15 @@ function initVertexBuffers(gl) {
    -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, // v1-v6-v7-v2 left
     0.0,-1.0, 0.0,  0.0,-1.0, 0.0,  0.0,-1.0, 0.0,  0.0,-1.0, 0.0, // v7-v4-v3-v2 down
     0.0, 0.0,-1.0,  0.0, 0.0,-1.0,  0.0, 0.0,-1.0,  0.0, 0.0,-1.0  // v4-v7-v6-v5 back
+  ]);
+  
+  var texCoords = new Float32Array([
+    1.0, 1.0,    0.0, 1.0,   0.0, 0.0,   1.0, 0.0,  // v0-v1-v2-v3 front
+    0.0, 1.0,    0.0, 0.0,   1.0, 0.0,   1.0, 1.0,  // v0-v3-v4-v5 right
+    1.0, 0.0,    1.0, 1.0,   0.0, 1.0,   0.0, 0.0,  // v0-v5-v6-v1 up
+    1.0, 1.0,    0.0, 1.0,   0.0, 0.0,   1.0, 0.0,  // v1-v6-v7-v2 left
+    0.0, 0.0,    1.0, 0.0,   1.0, 1.0,   0.0, 1.0,  // v7-v4-v3-v2 down
+    0.0, 0.0,    1.0, 0.0,   1.0, 1.0,   0.0, 1.0   // v4-v7-v6-v5 back
   ]);
 
   // Indices of the vertices
@@ -134,8 +198,9 @@ function initVertexBuffers(gl) {
   ]);
 
   // Write the vertex property to buffers (coordinates and normals)
-  if (!initArrayBuffer(gl, 'a_Position', vertices, gl.FLOAT, 3)) return -1;
-  if (!initArrayBuffer(gl, 'a_Normal', normals, gl.FLOAT, 3)) return -1;
+  if (!initArrayBuffer(gl, 'a_Position', vertices, 3)) return -1;
+  if (!initArrayBuffer(gl, 'a_Normal', normals, 3)) return -1;
+  if (!initArrayBuffer(gl, 'a_TexCoords', texCoords, 2)) return -1;
 
   // Unbind the buffer object
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -152,24 +217,29 @@ function initVertexBuffers(gl) {
   return indices.length;
 }
 
-function initArrayBuffer(gl, attribute, data, type, num) {
+function initArrayBuffer(gl, attribute, data, num) {
   // Create a buffer object
   var buffer = gl.createBuffer();
   if (!buffer) {
     console.log('Failed to create the buffer object');
     return false;
   }
+  
   // Write date into the buffer object
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  
+  // Element size
+  var FSIZE = data.BYTES_PER_ELEMENT;
 
   // Assign the buffer object to the attribute variable
+
   var a_attribute = gl.getAttribLocation(gl.program, attribute);
   if (a_attribute < 0) {
     console.log('Failed to get the storage location of ' + attribute);
     return false;
   }
-  gl.vertexAttribPointer(a_attribute, num, type, false, 0, 0);
+  gl.vertexAttribPointer(a_attribute, num, gl.FLOAT, false, FSIZE * num, 0);
   // Enable the assignment of the buffer object to the attribute variable
   gl.enableVertexAttribArray(a_attribute);
 
@@ -179,7 +249,7 @@ function initArrayBuffer(gl, attribute, data, type, num) {
 // Coordinate transformation matrix
 var g_modelMatrix = new Matrix4(), g_mvpMatrix = new Matrix4();
 
-function draw(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
+function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
 	
   // Clear color and depth buffer
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -193,258 +263,273 @@ function draw(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
   draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 16.0, 0.0, 0.0,g_rotate_angle+0.0);
   draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 0.0, 0.0, 22.0,g_rotate_angle+0.0);
   draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -3.0, 0.0, -15.0,g_rotate_angle+90.0);
-  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -17.5, 0.0, 0.0,g_rotate_angle+0.0);
-  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -17.5, 0.0, -4.0,g_rotate_angle+0.0);
-  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5, 0.0, 2.0,g_rotate_angle+180.0);
-  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5, 0.0, -2.0,g_rotate_angle+180.0);
+  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -17.5-chair_move, 0.0, 0.0,g_rotate_angle+0.0);
+  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -17.5-chair_move, 0.0, -4.0,g_rotate_angle+0.0);
+  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5-chair_move, 0.0, 2.0,g_rotate_angle+180.0);
+  draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5-chair_move, 0.0, -2.0,g_rotate_angle+180.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 2.0, 0.0, -13.0,g_rotate_angle+0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 7.0, 0.0, -13.0,g_rotate_angle+0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 12.0, 0.0, -13.0,g_rotate_angle+0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 17.0, 0.0, -13.0,g_rotate_angle+0.0);
   draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -19.0, 0.0, 13.0,g_rotate_angle+0.0);
+  draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
 }
 
 function draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+4.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+8.0, y+0.0, z+4.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+8.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+4.0, y+3.0, z+2.0);
-  drawBox(gl, n, 9.0, 0.5, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 9.0, 0.5, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
 }
 
 function draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+2.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+2.0, y+0.0, z+2.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+2.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.0, y+2.5, z+1.0);
-  drawBox(gl, n, 2.5, 0.1, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 2.5, 0.1, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.25, y+2.5, z+1.0);
   g_modelMatrix.rotate(5.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.1, 3.5, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.1, 3.5, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.8,0.4);
 }
 
 function draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 4.0, 1.5, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 4.0, 1.5, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.4,0.6);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-2.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.5, 4.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.5, 4.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.4,0.6);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z-4.0);
-  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.4,0.6);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z+4.0);
-  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,0.4,0.6);
   
 }
 
 function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 2.0, 0.25, 2.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 2.0, 0.25, 2.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.6,0.6);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 10.0, 0.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.25, 10.0, 0.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.6,0.6);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+7.5, z+0.0);
-  drawBox(gl, n, 1.25, 2.0, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.25, 2.0, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,1.0,1.0);
 }
 
 function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 2.0, 0.25, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 2.0, 0.25, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 1.5, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.25, 1.5, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z+0.0);
-  drawBox(gl, n, 0.5, 3.0, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 3.0, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.25, y+1.5, z+0.0);
-  drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
 }
 
 function draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 6.0, 0.05, 10.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 6.0, 0.05, 10.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.0,0.6,1.0);
   
 }
 
 function draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 3.5, 2.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 2.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.4,1.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.75, y+2.0, z+0.0);
-  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.4,1.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+2.0, z+0.0);
-  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.4,1.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+2.0, z-1.0);
   g_modelMatrix.rotate(-15.0,1.0,0.0,0.0);
-  drawBox(gl, n, 3.5, 4.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 4.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.4,1.0);
 }
 
 function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) { 
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.75, y+0.0, z+0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z-1.5);
   g_modelMatrix.rotate(90.0, 0.0,1.0,0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.4, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.10, 10.0, 3.4, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+9.0, z+0.0);
-  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+7.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.10, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 0.10, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+5.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
 }
 
 function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) { 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z-1.5);
   g_modelMatrix.rotate(90.0, 1.0,0.0,0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-3.5, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+3.5, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+1.50);
-  drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.0, y+1.5, z+1.65);
-  drawBox(gl, n, 0.2, 0.2, 0.2, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.2, 0.2, 0.2, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
 }
 
 function draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) { 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+5.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+10.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+10.0, y+0.0, z+5.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z+2.5);
-  drawBox(gl, n, 12.0, 1.0, 7.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 12.0, 1.0, 7.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.0,0.6,0.0);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z-1.0);
   g_modelMatrix.rotate(-15.0,1.0,0.0,0.0);
-  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z+6.0);
   g_modelMatrix.rotate(15.0,1.0,0.0,0.0);
-  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
-  g_modelMatrix.translate(x-0.5, y+3.0, z+2.5);
+  g_modelMatrix.translate(x-0.75, y+3.0, z+2.5);
   g_modelMatrix.rotate(15.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
-  g_modelMatrix.translate(x+10.5, y+3.0, z+2.5);
+  g_modelMatrix.translate(x+10.75, y+3.0, z+2.5);
   g_modelMatrix.rotate(-15.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
+  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
 
+}
+
+function draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate){
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-2.5, y+0.0, z+5.0);
+  drawBox(gl, n, 50.0, 0.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.76,0.76,0.64);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-2.5, y+0.0, z-17.5);
+  drawBox(gl, n, 50.0, 12.0, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.95,0.95,0.95);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-27.5, y+0.0, z+5.0);
+  drawBox(gl, n, 0.1, 12.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.95,0.95,0.95);
 }
 
 var g_matrixStack = []; // Array for storing a matrix
@@ -460,8 +545,18 @@ function popMatrix() { // Retrieve the matrix from the array
 var g_normalMatrix = new Matrix4();  // Coordinate transformation matrix for normals
 
 // Draw rectangular solid
-function drawBox(gl, n, width, height, depth, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
+function drawBox(gl, n, width, height, depth, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,r,g, b) {
   pushMatrix(g_modelMatrix);   // Save the model matrix
+    var colors = new Float32Array([
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,     // v0-v1-v2-v3 front
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,      // v0-v3-v4-v5 right
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,      // v0-v5-v6-v1 up
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,      // v1-v6-v7-v2 left
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,      // v7-v4-v3-v2 down
+    r, g, b,   r, g, b,   r, g, b,  r, g, b,     // v4-v7-v6-v5 back
+ ]);
+ 
+    if (!initArrayBuffer(gl, 'a_Color', colors, 3)) return -1;
     // Scale a cube and draw
     g_modelMatrix.scale(width, height, depth);
     // Calculate the model view project matrix and pass it to u_MvpMatrix
