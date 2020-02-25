@@ -26,7 +26,8 @@ var FSHADER_SOURCE =
   '#ifdef GL_ES\n' +
   'precision mediump float;\n' +
   '#endif\n' +
-  'uniform bool u_UseTextures;\n' +    // Texture enable/disable flag
+  'uniform bool u_UseTextures;\n' +  
+  'uniform bool u_UseTVLight;\n' +   // Texture enable/disable flag
   'uniform vec3 u_LightColor;\n' +     // Light color
   'uniform vec3 u_LightPosition;\n' +  // Position of the light source
   'uniform vec3 u_AmbientLight;\n' +   // Ambient light color
@@ -44,14 +45,20 @@ var FSHADER_SOURCE =
   '  float nDotL = max(dot(lightDirection, normal), 0.0);\n' +
      // Calculate the final color from diffuse reflection and ambient reflection
   '  vec3 diffuse;\n' +
+  '  vec3 TVdiffuse;\n' +
   '  if (u_UseTextures) {\n' +
   '     vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
   '     diffuse = u_LightColor * TexColor.rgb * nDotL * 1.2;\n' +
   '  } else {\n' +
   '     diffuse = u_LightColor * v_Color.rgb * nDotL;\n' +
   '  }\n' +
+  '  if (u_UseTVLight) {\n' +
+  '  vec3 TVLightDirection = normalize(normalize(vec3(3.4, 10.0, 80.0)) - v_Position);\n' +
+  '  float TVnDotL = max(dot(TVLightDirection, normal), 0.0);\n' +
+  '     TVdiffuse = v_Color.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
+  '  } ' +
   '  vec3 ambient = u_AmbientLight * v_Color.rgb;\n' +
-  '  gl_FragColor = vec4(diffuse + ambient, v_Color.a);\n' +
+  '  gl_FragColor = vec4(diffuse + ambient + TVdiffuse, v_Color.a);\n' +
   '}\n';
 
 function main() {
@@ -94,6 +101,12 @@ function main() {
     return;
   }
   
+  var u_UseTVLight = gl.getUniformLocation(gl.program, "u_UseTVLight");
+  if (!u_UseTVLight) { 
+    console.log('Failed to get the storage location for tv light flag');
+    return;
+  }
+  
   var modelMatrix = new Matrix4();
 
   gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
@@ -103,14 +116,14 @@ function main() {
   // Set the light direction (in the world coordinate)
   gl.uniform3f(u_LightPosition, 2.0, 3.0, 2.5);
   // Set the ambient light
-  gl.uniform3f(u_AmbientLight, 0.3, 0.3, 0.3);
+  gl.uniform3f(u_AmbientLight, 0.2, 0.2, 0.2);
 
   // Calculate the view projection matrix
   var viewProjMatrix = new Matrix4();
   viewProjMatrix.setPerspective(50.0, canvas.width / canvas.height, 1.0, 100.0);
   viewProjMatrix.lookAt(20.0,30.0, 50.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
-  document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix); };
+  document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight); };
   drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
 }
 
@@ -118,9 +131,12 @@ var MOVE_STEP = 1.0;
 var ANGLE_STEP = 3.0;
 var g_rotate_angle = 0.0;
 var chair_move = 0.0;
-var CHAIR_MOVE_STEP = 0.25;
+var arm_chair_angle = 0.0;
+var cabinet_angle = 0.0;
+var drawer_move = 0.0;
+var use_tv_light = false;
 
-function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
+function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight) {
   var x_View_Pos = 0.0;
   var y_View_Pos = 0.0;
   var z_View_Pos = 0.0;
@@ -140,14 +156,59 @@ function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
       break;
     case 37: 
       g_rotate_angle += ANGLE_STEP;
-	  sofa_rotate_angle += ANGLE_STEP;
       break;
 	case 65:
-	  chair_move += CHAIR_MOVE_STEP;
+	  if (chair_move < 2.5){
+		  chair_move += 0.25;
+	  }
 	  break;
-	case 68:
-	  chair_move -= CHAIR_MOVE_STEP;
+	case 83:
+	  if (chair_move > -2.0){
+	    chair_move -= 0.25;
+	    
+	  }
 	  break;
+	case 90:
+	  if (arm_chair_angle > -30){
+		  arm_chair_angle -= 3.0;
+	  }
+	  break;
+	case 88:
+	  if (arm_chair_angle < 15){
+		  arm_chair_angle += 3.0;
+	  }
+	  break;
+	case 81:
+	  if (cabinet_angle < 90) {
+		cabinet_angle += 6.0;
+	  }
+	  break;
+	case 87:
+	  if (cabinet_angle > 0) {
+		cabinet_angle -= 6.0;
+	  }
+	  break;
+	case 79:
+	  if (drawer_move < 2.0){
+		  drawer_move += 0.25;
+	  }
+	  break;
+	case 80:
+	  if (drawer_move > 0.0){
+		  drawer_move -= 0.25;
+	  }
+	  break;
+	  
+	case 32:
+	if (use_tv_light) {
+		gl.uniform1i(u_UseTVLight, false);
+		use_tv_light = false;
+	} else {
+		gl.uniform1i(u_UseTVLight, true);
+		use_tv_light = true;
+	}
+		
+	  // start animations
   }
   
   // Draw the robot arm
@@ -267,12 +328,13 @@ function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix) {
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -17.5-chair_move, 0.0, -4.0,g_rotate_angle+0.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5-chair_move, 0.0, 2.0,g_rotate_angle+180.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 8.5-chair_move, 0.0, -2.0,g_rotate_angle+180.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 2.0, 0.0, -13.0,g_rotate_angle+0.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 7.0, 0.0, -13.0,g_rotate_angle+0.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 12.0, 0.0, -13.0,g_rotate_angle+0.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 17.0, 0.0, -13.0,g_rotate_angle+0.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 2.0, 0.0, -13.0,g_rotate_angle+0.0,1.5);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 7.0, 0.0, -13.0,g_rotate_angle+0.0,1.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 12.0, 0.0, -13.0,g_rotate_angle+0.0,2.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 17.0, 0.0, -13.0,g_rotate_angle+0.0,drawer_move);
   draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, -19.0, 0.0, 13.0,g_rotate_angle+0.0);
   draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
+
 }
 
 function draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
@@ -376,6 +438,12 @@ function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.25, y+1.5, z+0.0);
   drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.2,0.2,0.2);
+  
+  if (use_tv_light){
+	  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+      g_modelMatrix.translate(x-0.50, y+2.0, z+0.0);
+      drawBox(gl, n, 0.1, 3.0, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,1.0,1.0,1.0);
+  }
 }
 
 function draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) {
@@ -400,11 +468,11 @@ function draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+2.0, z-1.0);
-  g_modelMatrix.rotate(-15.0,1.0,0.0,0.0);
+  g_modelMatrix.rotate(-15.0+arm_chair_angle,1.0,0.0,0.0);
   drawBox(gl, n, 3.5, 4.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.4,1.0);
 }
 
-function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) { 
+function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate, drawer_translate) { 
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
@@ -437,6 +505,43 @@ function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y,
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
   drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+0.0, y+1.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+0.0, y+1.2, z+1.6+drawer_translate);
+  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+1.65, y+1.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-1.65, y+1.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+0.0, y+5.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+0.0, y+5.2, z+1.6+drawer_translate);
+  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x+1.65, y+5.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-1.65, y+5.2, z+0.0+drawer_translate);
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.4,0.2,0.0);
+  
 }
 
 function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, z, y_rotate) { 
@@ -467,11 +572,8 @@ function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, x, y, 
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+1.50);
+  g_modelMatrix.rotate(cabinet_angle, 1.0, 0.0, 0.0);
   drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
-  
-  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
-  g_modelMatrix.translate(x+1.0, y+1.5, z+1.65);
-  drawBox(gl, n, 0.2, 0.2, 0.2, viewProjMatrix, u_MvpMatrix, u_NormalMatrix,0.6,0.4,0.2);
   
 }
 
