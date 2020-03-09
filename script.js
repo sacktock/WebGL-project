@@ -102,6 +102,7 @@ function main() {
   }
   
   var u_UseTVLight = gl.getUniformLocation(gl.program, "u_UseTVLight");
+  var u_UseTextures = gl.getUniformLocation(gl.program, "u_UseTextures");
   if (!u_UseTVLight) { 
     console.log('Failed to get the storage location for tv light flag');
     return;
@@ -122,6 +123,9 @@ function main() {
   var viewProjMatrix = new Matrix4();
   viewProjMatrix.setPerspective(50.0, canvas.width / canvas.height, 1.0, 100.0);
   viewProjMatrix.lookAt(20.0,30.0, 50.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+
+
+  gl.uniform1i(u_UseTextures, false);
 
   document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight); };
   drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix);
