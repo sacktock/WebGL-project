@@ -27,7 +27,8 @@ var FSHADER_SOURCE =
   'precision mediump float;\n' +
   '#endif\n' +
   'uniform bool u_UseTextures;\n' +  
-  'uniform bool u_UseTVLight;\n' +   // Texture enable/disable flag
+  'uniform bool u_UseTVLight;\n' + 
+  'uniform bool u_IsLight;\n' +   // Texture enable/disable flag
   'uniform vec3 u_LightColor;\n' +     // Light color
   'uniform vec3 u_LightPosition;\n' +  // Position of the light source
   'uniform vec3 u_AmbientLight;\n' +   // Ambient light color
@@ -46,19 +47,35 @@ var FSHADER_SOURCE =
      // Calculate the final color from diffuse reflection and ambient reflection
   '  vec3 diffuse;\n' +
   '  vec3 TVdiffuse;\n' +
+  '  vec3 ambient;\n'+
   '  if (u_UseTextures) {\n' +
   '     vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
   '     diffuse = u_LightColor * TexColor.rgb * nDotL * 1.2;\n' +
+  '		ambient = u_AmbientLight * TexColor.rgb;\n'+
   '  } else {\n' +
   '     diffuse = u_LightColor * v_Color.rgb * nDotL;\n' +
+  '     vec3 ambient = u_AmbientLight * v_Color.rgb;\n' +
   '  }\n' +
   '  if (u_UseTVLight) {\n' +
-  '  vec3 TVLightDirection = normalize(normalize(vec3(3.4, 10.0, 80.0)) - v_Position);\n' +
-  '  float TVnDotL = max(dot(TVLightDirection, normal), 0.0);\n' +
-  '     TVdiffuse = v_Color.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
-  '  } ' +
-  '  vec3 ambient = u_AmbientLight * v_Color.rgb;\n' +
-  '  gl_FragColor = vec4(diffuse + ambient + TVdiffuse, v_Color.a);\n' +
+  '  	vec3 TVLightDirection = normalize(normalize(vec3(4.0, 3.0, -5.5)) - v_Position);\n' +
+  '  	float TVnDotL = max(dot(TVLightDirection, normal), 0.0);\n' +
+    '   if (u_UseTextures) {\n' +
+  '     	vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
+  '     	TVdiffuse = TexColor.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
+  '  	} else {\n' +
+  '     	TVdiffuse = v_Color.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
+  '  	}\n' +
+  '  }\n ' +
+  '  if (u_IsLight) {\n' +
+  '  	if (u_UseTextures) {\n' +
+  '			vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
+  '    		gl_FragColor = TexColor;\n' +
+  '		} else {\n'+
+  '    		gl_FragColor = vec4(1.0,1.0,1.0,1.0);\n'+
+  '		}\n'+
+  '  } else {\n'+
+  '    gl_FragColor = vec4(diffuse + ambient + TVdiffuse, v_Color.a);\n' +
+  '  }\n'+
   '}\n';
 
 function main() {
@@ -86,7 +103,7 @@ function main() {
   }
 
   // Set the clear color and enable the depth test
-  gl.clearColor(0.5, 0.9, 1.0, 1.0);
+  gl.clearColor(0.0, 0.0, 0.0, 0.0);
   gl.enable(gl.DEPTH_TEST);
 
   // Get the storage locations of uniform variables
@@ -102,15 +119,14 @@ function main() {
   }
   
   var u_UseTVLight = gl.getUniformLocation(gl.program, "u_UseTVLight");
-  if (!u_UseTVLight) { 
-    console.log('Failed to get the storage location for tv light flag');
-    return;
-  }
   var u_UseTextures = gl.getUniformLocation(gl.program, "u_UseTextures");
-  if (!u_UseTextures) { 
-    console.log('Failed to get the storage location for use textures flag');
+  var u_IsLight = gl.getUniformLocation(gl.program, "u_IsLight");
+  if (!u_IsLight || !u_UseTVLight || ! u_UseTextures) { 
+    console.log('Failed to get the storage location for boolean flags');
     return;
   }
+  
+  gl.uniform1i(u_IsLight, false);
   
   var modelMatrix = new Matrix4();
 
@@ -119,21 +135,22 @@ function main() {
   // Set the light color (white)
   gl.uniform3f(u_LightColor, 1.0, 1.0, 1.0);
   // Set the light direction (in the world coordinate)
-  gl.uniform3f(u_LightPosition, 2.0, 3.0, 2.5);
+  gl.uniform3f(u_LightPosition, 3.0, 5.0, 3.0);
   // Set the ambient light
   gl.uniform3f(u_AmbientLight, 0.2, 0.2, 0.2);
 
   // Calculate the view projection matrix
   var viewProjMatrix = new Matrix4();
   viewProjMatrix.setPerspective(50.0, canvas.width / canvas.height, 1.0, 100.0);
-  viewProjMatrix.lookAt(20.0,30.0, 50.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+  viewProjMatrix.lookAt(20.0,30.0, 60.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+  viewProjMatrix.translate(7.5,0.0,0.0);
 
-  document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures); };
-  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures);
+  document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures, u_IsLight); };
+  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight);
 }
 
-var MOVE_STEP = 1.0;
-var ANGLE_STEP = 3.0;
+var MOVE_STEP = 3.0;
+var ANGLE_STEP = 7.5;
 var g_rotate_angle = 0.0;
 var chair_move = 0.0;
 var arm_chair_angle = 0.0;
@@ -141,7 +158,8 @@ var cabinet_angle = 0.0;
 var drawer_move = 0.0;
 var use_tv_light = false;
 
-function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures) {
+
+function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures, u_IsLight) {
   var x_View_Pos = 0.0;
   var y_View_Pos = 0.0;
   var z_View_Pos = 0.0;
@@ -175,49 +193,49 @@ function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTV
 	  break;
 	case 90:
 	  if (arm_chair_angle > -30){
-		  arm_chair_angle -= 3.0;
+		  arm_chair_angle -= 5.0;
 	  }
 	  break;
 	case 88:
 	  if (arm_chair_angle < 15){
-		  arm_chair_angle += 3.0;
+		  arm_chair_angle += 5.0;
 	  }
 	  break;
 	case 81:
 	  if (cabinet_angle < 90) {
-		cabinet_angle += 6.0;
+		cabinet_angle += 9.0;
 	  }
 	  break;
 	case 87:
 	  if (cabinet_angle > 0) {
-		cabinet_angle -= 6.0;
+		cabinet_angle -= 9.0;
 	  }
 	  break;
 	case 79:
 	  if (drawer_move < 2.0){
-		  drawer_move += 0.25;
+		  drawer_move += 0.5;
 	  }
 	  break;
 	case 80:
 	  if (drawer_move > 0.0){
-		  drawer_move -= 0.25;
+		  drawer_move -= 0.5;
 	  }
 	  break;
 	  
 	case 32:
-	if (use_tv_light) {
-		gl.uniform1i(u_UseTVLight, false);
-		use_tv_light = false;
-	} else {
-		gl.uniform1i(u_UseTVLight, true);
-		use_tv_light = true;
-	}
-		
+		if (use_tv_light) {
+			gl.uniform1i(u_UseTVLight, false);
+			use_tv_light = false;
+		} else {
+			gl.uniform1i(u_UseTVLight, true);
+			use_tv_light = true;
+		}
+		break;
 	  // start animations
   }
   
   // Draw the robot arm
-  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures);
+  drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight);
 }
 
 function initVertexBuffers(gl) {
@@ -315,7 +333,7 @@ function initArrayBuffer(gl, attribute, data, num) {
 // Coordinate transformation matrix
 var g_modelMatrix = new Matrix4(), g_mvpMatrix = new Matrix4();
 
-function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures) {
+function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight) {
 	
   // Clear color and depth buffer
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -324,21 +342,22 @@ function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseText
   draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, -10.0,g_rotate_angle+275.0);
   draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 10.0, 0.0, 10.0,g_rotate_angle+0.0);
   draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -2.0, 0.0, -25.0,g_rotate_angle+215.0);
-  draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 25.0, 3.2, -2.0,g_rotate_angle+305.0);
+  draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,u_IsLight, 25.0, 3.2, -2.0,g_rotate_angle+305.0);
   draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -16.0, 0.0, 0.0,g_rotate_angle+90);
-  draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 16.0, 0.0, 0.0,g_rotate_angle+0.0);
-  draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 22.0,g_rotate_angle+0.0);
+  draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, 16.0, 0.0, 0.0,g_rotate_angle+0.0);
+  draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, 0.0, 0.0, 22.0,g_rotate_angle+0.0);
   draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -3.0, 0.0, -15.0,g_rotate_angle+90.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -17.5-chair_move, 0.0, 0.0,g_rotate_angle+0.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -17.5-chair_move, 0.0, -4.0,g_rotate_angle+0.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 8.5-chair_move, 0.0, 2.0,g_rotate_angle+180.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 8.5-chair_move, 0.0, -2.0,g_rotate_angle+180.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 2.0, 0.0, -13.0,g_rotate_angle+0.0,1.5);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 7.0, 0.0, -13.0,g_rotate_angle+0.0,1.0);
-  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 12.0, 0.0, -13.0,g_rotate_angle+0.0,2.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 2.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 7.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
+  draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 12.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 17.0, 0.0, -13.0,g_rotate_angle+0.0,drawer_move);
   draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -19.0, 0.0, 13.0,g_rotate_angle+0.0);
   draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
+  draw_poster(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
 
 }
 
@@ -346,297 +365,307 @@ function draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTex
 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+4.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+8.0, y+0.0, z+4.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+8.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+4.0, y+3.0, z+2.0);
-  drawBox(gl, n, 9.0, 0.5, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 9.0, 0.5, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
 }
 
 function draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
 	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+2.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+2.0, y+0.0, z+2.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+2.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.0, y+2.5, z+1.0);
-  drawBox(gl, n, 2.5, 0.1, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 2.5, 0.1, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.25, y+2.5, z+1.0);
   g_modelMatrix.rotate(5.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.1, 3.5, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "");
+  drawBox(gl, n, 0.1, 3.5, 2.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
 }
 
 function draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
 	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 4.0, 1.5, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "");
+  drawBox(gl, n, 4.0, 1.5, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-2.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.5, 4.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "");
+  drawBox(gl, n, 1.5, 4.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z-4.0);
-  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "");
+  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z+4.0);
-  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "");
+  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
   
 }
 
-function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
+function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, x, y, z, y_rotate) {
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 2.0, 0.25, 2.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "");
+  drawBox(gl, n, 2.0, 0.25, 2.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "texture_metallic");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 10.0, 0.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "");
+  drawBox(gl, n, 0.25, 10.0, 0.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "texture_metallic");
   
+  gl.uniform1i(u_IsLight, true);	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+7.5, z+0.0);
   drawBox(gl, n, 1.25, 2.0, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,1.0,1.0, "");
+  gl.uniform1i(u_IsLight, false);	
 }
 
-function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
+function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 2.0, 0.25, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 2.0, 0.25, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 1.5, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 0.25, 1.5, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z+0.0);
-  drawBox(gl, n, 0.5, 3.0, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 0.5, 3.0, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.25, y+1.5, z+0.0);
-  drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
   if (use_tv_light){
+	   gl.uniform1i(u_IsLight, true);	
 	  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
       g_modelMatrix.translate(x-0.50, y+2.0, z+0.0);
-      drawBox(gl, n, 0.1, 3.0, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,1.0,1.0, "");
+      drawBox(gl, n, 0.1, 3.0, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,1.0,1.0, "texture_display");
+	  gl.uniform1i(u_IsLight, false);
   }
 }
 
 function draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 6.0, 0.05, 10.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.6,1.0, "");
+  drawBox(gl, n, 8.0, 0.05, 12.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.0,0.0, "texture_carpet");
   
 }
 
 function draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 3.5, 2.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "");
+  drawBox(gl, n, 3.5, 2.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "texture_chair");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.75, y+2.0, z+0.0);
-  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "");
+  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "texture_chair");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+2.0, z+0.0);
-  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "");
+  drawBox(gl, n, 1.0, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "texture_chair");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+2.0, z-1.0);
   g_modelMatrix.rotate(-15.0+arm_chair_angle,1.0,0.0,0.0);
-  drawBox(gl, n, 3.5, 4.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "");
+  drawBox(gl, n, 3.5, 4.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "texture_chair");
 }
 
 function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate, drawer_translate) { 
 	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.75, y+0.0, z+0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.10, 10.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z-1.5);
   g_modelMatrix.rotate(90.0, 0.0,1.0,0.0);
-  drawBox(gl, n, 0.10, 10.0, 3.4, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.10, 10.0, 3.4, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+9.0, z+0.0);
-  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+7.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.10, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.10, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+5.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.2, z+1.6+drawer_translate);
-  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.65, y+1.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.65, y+1.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
-  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+5.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+5.2, z+1.6+drawer_translate);
-  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 3.5, 1.8, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.65, y+5.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.65, y+5.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "");
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
 }
 
 function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) { 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z-1.5);
   g_modelMatrix.rotate(90.0, 1.0,0.0,0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+3.0, z+0.0);
-  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-3.5, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+3.5, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 0.25, 3.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+1.50);
   g_modelMatrix.rotate(cabinet_angle, 1.0, 0.0, 0.0);
-  drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "");
+  drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
   
 }
 
 function draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) { 
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+5.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+10.0, y+0.0, z+0.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+10.0, y+0.0, z+5.0);
-  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z+2.5);
-  drawBox(gl, n, 12.0, 1.0, 7.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.6,0.0, "");
+  drawBox(gl, n, 12.0, 1.0, 7.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.6,0.0, "texture_velvet");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z-1.0);
   g_modelMatrix.rotate(-15.0,1.0,0.0,0.0);
-  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+5.0, y+3.0, z+6.0);
   g_modelMatrix.rotate(15.0,1.0,0.0,0.0);
-  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 12.0, 2.0, 0.75, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-0.75, y+3.0, z+2.5);
   g_modelMatrix.rotate(15.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+10.75, y+3.0, z+2.5);
   g_modelMatrix.rotate(-15.0,0.0,0.0,1.0);
-  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "");
+  drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
 
 }
 
 function draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate){
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-2.5, y+0.0, z+5.0);
-  drawBox(gl, n, 50.0, 0.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.76,0.76,0.64, "");
+  drawBox(gl, n, 50.0, 0.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.76,0.76,0.64, "texture_floor");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-2.5, y+0.0, z-17.5);
-  drawBox(gl, n, 50.0, 12.0, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.95,0.95,0.95, "texture2");
+  drawBox(gl, n, 50.0, 12.0, 0.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.95,0.95,0.95, "texture_wall");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-27.5, y+0.0, z+5.0);
-  drawBox(gl, n, 0.1, 12.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.95,0.95,0.95, "texture1");
+  drawBox(gl, n, 0.1, 12.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.95,0.95,0.95, "texture_wall");
+}
+
+function draw_poster(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate){
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  g_modelMatrix.translate(x-12.5, y+2.0, z-17.4);
+  drawBox(gl, n, 5.0, 8.0, 0.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.76,0.76,0.64, "texture_poster");
 }
 
 var g_matrixStack = []; // Array for storing a matrix
@@ -711,6 +740,7 @@ function loadTexAndDraw(gl, n, texture, u_Sampler, texture_id) {
 
   // Set the texture image
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, document.getElementById(texture_id));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
   // Assign u_Sampler to TEXTURE0
