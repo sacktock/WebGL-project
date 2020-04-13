@@ -5,13 +5,13 @@ L2 SM Computer Graphics Summative Assignment 2019/20. Implement a small 3D livin
 - the **lib** folder contains all the relevant WebGL libraries used in this project.
 - the **resources** folder contains all the images used as textures in this project.
 - **canvas.html** displays the WebGL canvas along with some instructions (also loads images into the DOM). 
-- **run.bat** is a windows script to open the project into chrome using the parameter -allow-file-access-from-files.
+- **run.bat** is a windows script to open the project into chrome using the parameter _-allow-file-access-from-files_.
 - **script.js** is the main project code.
 - **style.css** is a stylesheet file.
 
 # How to run the webgl program
 - double click the **canvas.html** file to open into your defualt browser (preferably one with WebGL support).
-- if you get this error, __'The image element contains cross-origin data, and may not be loaded.'__, follow on to the next section.
+- if you get this error, _'The image element contains cross-origin data, and may not be loaded.'_, follow on to the next section.
 
 # Loading textures securely
 ## Start http-server
@@ -19,16 +19,16 @@ L2 SM Computer Graphics Summative Assignment 2019/20. Implement a small 3D livin
 - install **http-server** globally with **npm**.
 - open cmd.
 - navigate to this directory.
-- type the command __'http-sever'__.
+- type the command _'http-sever'_.
 - open your desired browser.
-- go to __localhost:8080/canvas.html__.
+- go to _localhost:8080/canvas.html_.
 
 https://jasonwatmore.com/post/2016/06/22/nodejs-setup-simple-http-server-local-web-server
 
 ## Run the .bat file (recommended easier option)
 - alternatively, double click on the run.bat file.
-- this should launch this project into chrome with the parameter __-allow-file-access-from-files__.
-- **note:** provided __'chrome.exe'__ is in the folder __'C:\Program Files (x86)\Google\Chrome\Application\'__.
+- this should launch this project into chrome with the parameter _-allow-file-access-from-files_.
+- **note:** provided _'chrome.exe'_ is in the folder _'C:\Program Files (x86)\Google\Chrome\Application\'_.
 
 # Additional Info
 ## Controls
