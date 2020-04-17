@@ -30,7 +30,7 @@ https://jasonwatmore.com/post/2016/06/22/nodejs-setup-simple-http-server-local-w
 - this should launch this project into chrome with the parameter _-allow-file-access-from-files_.
 - **note:** provided _'chrome.exe'_ is in the folder _'C:\Program Files (x86)\Google\Chrome\Application\'_.
 
-# Extrenal Resources
+# External Resources
 No external resources were used to create this project, only the examples from the lectures and lecture slides were used to help create this project.
 
 # Additional Info
