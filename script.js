@@ -1,72 +1,77 @@
-// Directional lighting demo: By Frederick Li
-// Vertex shader program
+// Vertex shader 
 var VSHADER_SOURCE =
   'attribute vec4 a_Position;\n' +
   'attribute vec4 a_Color;\n' +
   'attribute vec4 a_Normal;\n' +
   'attribute vec2 a_TexCoords;\n' +
   'uniform mat4 u_MvpMatrix;\n' +
-  'uniform mat4 u_ModelMatrix;\n' +    // Model matrix
-  'uniform mat4 u_NormalMatrix;\n' +   // Transformation matrix of the normal
+  'uniform mat4 u_ModelMatrix;\n' +    
+  'uniform mat4 u_NormalMatrix;\n' +   
   'varying vec4 v_Color;\n' +
   'varying vec3 v_Normal;\n' +
   'varying vec2 v_TexCoords;\n' +
   'varying vec3 v_Position;\n' +
   'void main() {\n' +
+  // calculate world coordinate
   '  gl_Position = u_MvpMatrix * a_Position;\n' +
-     // Calculate the vertex position in the world coordinate
   '  v_Position = vec3(u_ModelMatrix * a_Position);\n' +
   '  v_Normal = normalize(vec3(u_NormalMatrix * a_Normal));\n' +
   '  v_Color = a_Color;\n' + 
   '  v_TexCoords = a_TexCoords;\n' +
   '}\n';
 
-// Fragment shader program
+// Fragment shader 
 var FSHADER_SOURCE =
   '#ifdef GL_ES\n' +
   'precision mediump float;\n' +
   '#endif\n' +
-  'uniform bool u_UseTextures;\n' +  
-  'uniform bool u_UseTVLight;\n' + 
-  'uniform bool u_IsLight;\n' +   // Texture enable/disable flag
-  'uniform vec3 u_LightColor;\n' +     // Light color
-  'uniform vec3 u_LightPosition;\n' +  // Position of the light source
-  'uniform vec3 u_AmbientLight;\n' +   // Ambient light color
+  'uniform bool u_UseTextures;\n' +  // texture flag
+  'uniform bool u_UseTVLight;\n' + // TV lighting effect flag
+  'uniform bool u_IsLight;\n' +   // Fragment is a light source flag
+  'uniform vec3 u_LightColor;\n' +     // light colour
+  'uniform vec3 u_LightPosition;\n' +  // coordinate of light source
+  'uniform vec3 u_AmbientLight;\n' +   // ambient light colour
   'varying vec3 v_Normal;\n' +
   'varying vec3 v_Position;\n' +
   'varying vec4 v_Color;\n' +
   'uniform sampler2D u_Sampler;\n' +
   'varying vec2 v_TexCoords;\n' +
   'void main() {\n' +
-     // Normalize the normal because it is interpolated and not 1.0 in length any more
   '  vec3 normal = normalize(v_Normal);\n' +
-     // Calculate the light direction and make its length 1.
+     // use the light source point to calculate the direction of the light
   '  vec3 lightDirection = normalize(u_LightPosition - v_Position);\n' +
-     // The dot product of the light direction and the orientation of a surface (the normal)
+     // calulate the dot product of the light direction and normal vector
   '  float nDotL = max(dot(lightDirection, normal), 0.0);\n' +
-     // Calculate the final color from diffuse reflection and ambient reflection
   '  vec3 diffuse;\n' +
   '  vec3 TVdiffuse;\n' +
   '  vec3 ambient;\n'+
   '  if (u_UseTextures) {\n' +
+	// calculate the diffuse reflection and ambient colour using textures
   '     vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
   '     diffuse = u_LightColor * TexColor.rgb * nDotL * 1.2;\n' +
   '		ambient = u_AmbientLight * TexColor.rgb;\n'+
   '  } else {\n' +
+  // calculate the diffuse reflection and ambient colour using vertex colour
   '     diffuse = u_LightColor * v_Color.rgb * nDotL;\n' +
   '     vec3 ambient = u_AmbientLight * v_Color.rgb;\n' +
   '  }\n' +
   '  if (u_UseTVLight) {\n' +
+  // us the TV lighting coordinate to calculate the lighting direction
   '  	vec3 TVLightDirection = normalize(normalize(vec3(4.0, 3.0, -5.5)) - v_Position);\n' +
+  // calculate the dot product of the TV light direction and the normal vector
   '  	float TVnDotL = max(dot(TVLightDirection, normal), 0.0);\n' +
     '   if (u_UseTextures) {\n' +
+	// calculate the TV diffuse reflection using textures
   '     	vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
+			// use 0.0 0.5 0.7 as the blue light emmited from the TV
   '     	TVdiffuse = TexColor.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
   '  	} else {\n' +
+  // calculate the TV diffuse reflection using vertex colour
   '     	TVdiffuse = v_Color.rgb * TVnDotL * normalize(vec3(0.0, 0.5, 0.7));\n' +
   '  	}\n' +
   '  }\n ' +
-  '  if (u_IsLight) {\n' +
+  '  if (u_IsLight) {\n' + 
+		// if fragment is a light source use the full texture colour or white
   '  	if (u_UseTextures) {\n' +
   '			vec4 TexColor = texture2D(u_Sampler, v_TexCoords);\n' +
   '    		gl_FragColor = TexColor;\n' +
@@ -74,39 +79,40 @@ var FSHADER_SOURCE =
   '    		gl_FragColor = vec4(1.0,1.0,1.0,1.0);\n'+
   '		}\n'+
   '  } else {\n'+
+		// other wise use the diffuse reflection and ambient lighting
   '    gl_FragColor = vec4(diffuse + ambient + TVdiffuse, v_Color.a);\n' +
   '  }\n'+
   '}\n';
 
 function main() {
-  // Retrieve <canvas> element
+  // retrieve wegl canvas
   var canvas = document.getElementById('webgl');
 
-  // Get the rendering context for WebGL
+  // get the rendering context for WebGL
   var gl = getWebGLContext(canvas);
   if (!gl) {
     console.log('Failed to get the rendering context for WebGL');
     return;
   }
 
-  // Initialize shaders
+  // init shaders
   if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
     console.log('Failed to intialize shaders.');
     return;
   }
 
-  // Set the vertex information
+  // set the cube vertex information
   var n = initVertexBuffers(gl);
   if (n < 0) {
     console.log('Failed to set the vertex information');
     return;
   }
 
-  // Set the clear color and enable the depth test
+  // set the clear color and enable the depth test
   gl.clearColor(0.0, 0.0, 0.0, 0.0);
   gl.enable(gl.DEPTH_TEST);
 
-  // Get the storage locations of uniform variables
+  // get storage locations for uniform variables
   var u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
   var u_MvpMatrix = gl.getUniformLocation(gl.program, 'u_MvpMatrix');
   var u_NormalMatrix = gl.getUniformLocation(gl.program, 'u_NormalMatrix');
@@ -118,6 +124,7 @@ function main() {
     return;
   }
   
+  // get storage location for flag variables
   var u_UseTVLight = gl.getUniformLocation(gl.program, "u_UseTVLight");
   var u_UseTextures = gl.getUniformLocation(gl.program, "u_UseTextures");
   var u_IsLight = gl.getUniformLocation(gl.program, "u_IsLight");
@@ -126,48 +133,55 @@ function main() {
     return;
   }
   
+  // set is lgiht to false
   gl.uniform1i(u_IsLight, false);
   
+  // create the modelMatrix
   var modelMatrix = new Matrix4();
 
+  // set the u_ModelMatrix
   gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
   
-  // Set the light color (white)
+  // set the light color to white
   gl.uniform3f(u_LightColor, 1.0, 1.0, 1.0);
-  // Set the light direction (in the world coordinate)
+  // set the point lighting world coordinates
   gl.uniform3f(u_LightPosition, 3.0, 5.0, 3.0);
-  // Set the ambient light
+  // set the ambient lighting
   gl.uniform3f(u_AmbientLight, 0.2, 0.2, 0.2);
 
-  // Calculate the view projection matrix
+  // create the view projection matrix
   var viewProjMatrix = new Matrix4();
+  
+  // set the virtual camera position
   viewProjMatrix.setPerspective(50.0, canvas.width / canvas.height, 1.0, 100.0);
   viewProjMatrix.lookAt(20.0,30.0, 60.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
   viewProjMatrix.translate(7.5,0.0,0.0);
 
+  // handle on keydown 
   document.onkeydown = function(ev){ keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures, u_IsLight); };
+  
+  // draw the scene 
   drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight);
 }
 
-var MOVE_STEP = 3.0;
-var ANGLE_STEP = 7.5;
-var g_rotate_angle = 0.0;
-var chair_move = 0.0;
-var arm_chair_angle = 0.0;
-var cabinet_angle = 0.0;
-var drawer_move = 0.0;
-var use_tv_light = false;
+const MOVE_STEP = 3.0; // how much to move the model
+const ANGLE_STEP = 7.5; // how much to rotate the model
+var g_rotate_angle = 0.0; // current rotation
+var chair_move = 0.0; // current chair displacement
+var arm_chair_angle = 0.0; // current arm chair rotation
+var cabinet_angle = 0.0; // current cabinet drawer rotation
+var drawer_move = 0.0; // current cupboard drawer displacement
+var use_tv_light = false; // flag for using tv light
 
 
 function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTVLight, u_UseTextures, u_IsLight) {
-  var x_View_Pos = 0.0;
-  var y_View_Pos = 0.0;
-  var z_View_Pos = 0.0;
   switch (ev.keyCode) {
     case 40: 
+	  // move the virtual camera
       viewProjMatrix.lookAt(0.0,0.0, MOVE_STEP, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
       break;
     case 38: 
+	// move the virtual camera
       viewProjMatrix.lookAt(0.1,0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 	  viewProjMatrix.lookAt(0.1,0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 	  viewProjMatrix.lookAt(0.0,0.0, MOVE_STEP, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -175,48 +189,58 @@ function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTV
 	  viewProjMatrix.lookAt(0.1,0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
       break;
     case 39: 
+	// rotate the model
       g_rotate_angle -= ANGLE_STEP;
       break;
     case 37: 
+	// rotate the model
       g_rotate_angle += ANGLE_STEP;
       break;
 	case 65:
+	// move the chairs
 	  if (chair_move < 2.5){
 		  chair_move += 0.25;
 	  }
 	  break;
 	case 83:
+	// move the chairs
 	  if (chair_move > -2.0){
 	    chair_move -= 0.25;
 	    
 	  }
 	  break;
 	case 90:
+	// rotate the arm chair
 	  if (arm_chair_angle > -30){
 		  arm_chair_angle -= 5.0;
 	  }
 	  break;
 	case 88:
+	// rotate the arm chair
 	  if (arm_chair_angle < 15){
 		  arm_chair_angle += 5.0;
 	  }
 	  break;
 	case 81:
+	// open the cabinet drawer
 	  if (cabinet_angle < 90) {
 		cabinet_angle += 9.0;
 	  }
 	  break;
 	case 87:
+	// close the cabinet drawer
 	  if (cabinet_angle > 0) {
 		cabinet_angle -= 9.0;
 	  }
 	  break;
 	case 79:
+	// open the cupboard drawer
 	  if (drawer_move < 2.0){
 		  drawer_move += 0.5;
 	  }
 	  break;
 	case 80:
+	// close the cupboard drawer
 	  if (drawer_move > 0.0){
 		  drawer_move -= 0.5;
 	  }
@@ -224,22 +248,22 @@ function keydown(ev, gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTV
 	  
 	case 32:
 		if (use_tv_light) {
+			// toggle TV light off
 			gl.uniform1i(u_UseTVLight, false);
 			use_tv_light = false;
 		} else {
+			// use TV light in the fragment shader
 			gl.uniform1i(u_UseTVLight, true);
 			use_tv_light = true;
 		}
 		break;
-	  // start animations
   }
-  
-  // Draw the robot arm
+  // draw the scene
   drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight);
 }
 
 function initVertexBuffers(gl) {
-  // Coordinates（Cube which length of one side is 1 with the origin on the center of the bottom)
+  // cube coordinates
   var vertices = new Float32Array([
     0.5, 1.0, 0.5, -0.5, 1.0, 0.5, -0.5, 0.0, 0.5,  0.5, 0.0, 0.5, // v0-v1-v2-v3 front
     0.5, 1.0, 0.5,  0.5, 0.0, 0.5,  0.5, 0.0,-0.5,  0.5, 1.0,-0.5, // v0-v3-v4-v5 right
@@ -248,11 +272,8 @@ function initVertexBuffers(gl) {
    -0.5, 0.0,-0.5,  0.5, 0.0,-0.5,  0.5, 0.0, 0.5, -0.5, 0.0, 0.5, // v7-v4-v3-v2 down
     0.5, 0.0,-0.5, -0.5, 0.0,-0.5, -0.5, 1.0,-0.5,  0.5, 1.0,-0.5  // v4-v7-v6-v5 back
   ]);
-
-
-// Colors
  
-  // Normal
+  // normals
   var normals = new Float32Array([
     0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0,  0.0, 0.0, 1.0, // v0-v1-v2-v3 front
     1.0, 0.0, 0.0,  1.0, 0.0, 0.0,  1.0, 0.0, 0.0,  1.0, 0.0, 0.0, // v0-v3-v4-v5 right
@@ -262,6 +283,7 @@ function initVertexBuffers(gl) {
     0.0, 0.0,-1.0,  0.0, 0.0,-1.0,  0.0, 0.0,-1.0,  0.0, 0.0,-1.0  // v4-v7-v6-v5 back
   ]);
   
+  // texture coordinates
   var texCoords = new Float32Array([
     1.0, 1.0,    0.0, 1.0,   0.0, 0.0,   1.0, 0.0,  // v0-v1-v2-v3 front
     0.0, 1.0,    0.0, 0.0,   1.0, 0.0,   1.0, 1.0,  // v0-v3-v4-v5 right
@@ -271,7 +293,7 @@ function initVertexBuffers(gl) {
     0.0, 0.0,    1.0, 0.0,   1.0, 1.0,   0.0, 1.0   // v4-v7-v6-v5 back
   ]);
 
-  // Indices of the vertices
+  // indices of the vertices
   var indices = new Uint8Array([
      0, 1, 2,   0, 2, 3,    // front
      4, 5, 6,   4, 6, 7,    // right
@@ -281,15 +303,15 @@ function initVertexBuffers(gl) {
     20,21,22,  20,22,23     // back
   ]);
 
-  // Write the vertex property to buffers (coordinates and normals)
+  // write the vertex property to buffers
   if (!initArrayBuffer(gl, 'a_Position', vertices, 3)) return -1;
   if (!initArrayBuffer(gl, 'a_Normal', normals, 3)) return -1;
   if (!initArrayBuffer(gl, 'a_TexCoords', texCoords, 2)) return -1;
 
-  // Unbind the buffer object
+  // unbind the buffer object
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-  // Write the indices to the buffer object
+  // write the indices to the buffer object
   var indexBuffer = gl.createBuffer();
   if (!indexBuffer) {
     console.log('Failed to create the buffer object');
@@ -302,51 +324,53 @@ function initVertexBuffers(gl) {
 }
 
 function initArrayBuffer(gl, attribute, data, num) {
-  // Create a buffer object
+  // create a buffer object
   var buffer = gl.createBuffer();
   if (!buffer) {
     console.log('Failed to create the buffer object');
     return false;
   }
   
-  // Write date into the buffer object
+  // write date into the buffer object
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
   
-  // Element size
+  // element size
   var FSIZE = data.BYTES_PER_ELEMENT;
 
-  // Assign the buffer object to the attribute variable
-
+  // assign the buffer object to the attribute variable
   var a_attribute = gl.getAttribLocation(gl.program, attribute);
   if (a_attribute < 0) {
     console.log('Failed to get the storage location of ' + attribute);
     return false;
   }
   gl.vertexAttribPointer(a_attribute, num, gl.FLOAT, false, FSIZE * num, 0);
-  // Enable the assignment of the buffer object to the attribute variable
+  // enable the assignment of the buffer object to the attribute variable
   gl.enableVertexAttribArray(a_attribute);
 
   return true;
 }
 
-// Coordinate transformation matrix
+// local model matrix
 var g_modelMatrix = new Matrix4(), g_mvpMatrix = new Matrix4();
 
 function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight) {
-	
-  // Clear color and depth buffer
+  // clear color and depth buffer
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+  // draw the objects in the scene
   draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 7.0,g_rotate_angle+0.0);
   draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, -10.0,g_rotate_angle+275.0);
   draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 10.0, 0.0, 10.0,g_rotate_angle+0.0);
   draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -2.0, 0.0, -25.0,g_rotate_angle+215.0);
+  // pass u_IsLight to ensure the TV screen is lit up
   draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,u_IsLight, 25.0, 3.2, -2.0,g_rotate_angle+305.0);
   draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -16.0, 0.0, 0.0,g_rotate_angle+90);
+  // pass u_IsLight to ensure the lighting parts of the lamp are specified
   draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, 16.0, 0.0, 0.0,g_rotate_angle+0.0);
   draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, 0.0, 0.0, 22.0,g_rotate_angle+0.0);
   draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -3.0, 0.0, -15.0,g_rotate_angle+90.0);
+  // pass the chair move value to ensure the chairs are displaced the specified amount
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -17.5-chair_move, 0.0, 0.0,g_rotate_angle+0.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -17.5-chair_move, 0.0, -4.0,g_rotate_angle+0.0);
   draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 8.5-chair_move, 0.0, 2.0,g_rotate_angle+180.0);
@@ -354,17 +378,20 @@ function drawScene(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseText
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 2.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 7.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 12.0, 0.0, -13.0,g_rotate_angle+0.0,0.0);
+  // pass the drawer move value to ensure the cupboard drawers are displaced the specified amount
   draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 17.0, 0.0, -13.0,g_rotate_angle+0.0,drawer_move);
   draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, -19.0, 0.0, 13.0,g_rotate_angle+0.0);
   draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
   draw_poster(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, 0.0, 0.0, 0.0,g_rotate_angle+0.0);
-
 }
 
 function draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
-
+  // draw table object
+  // pass the y_rotate value to ensure the model is rotated w.r.t the virtual camera
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // pass the x, y, and z displacement to ensure the model is placed in the correct position
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
+  // draw the box with the given dimensions 1.0 3.0 1.0 and colour 1.0 0.8 0.4 and texture id: texture_wood
   drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
@@ -385,7 +412,7 @@ function draw_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTex
 }
 
 function draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
-	
+  // draw chair object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 0.5, 2.5, 0.5, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.8,0.4, "texture_wood");
@@ -413,7 +440,7 @@ function draw_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTex
 }
 
 function draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
-	
+  // draw sofa object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 4.0, 1.5, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
@@ -428,11 +455,11 @@ function draw_sofa(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseText
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+1.5, z+4.0);
-  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa");
-  
+  drawBox(gl, n, 4.5, 1.25, 1.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,0.4,0.6, "texture_sofa"); 
 }
 
 function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, x, y, z, y_rotate) {
+  // draw lamp object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 2.0, 0.25, 2.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "texture_metallic");
@@ -441,6 +468,7 @@ function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseText
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 0.25, 10.0, 0.25, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.6,0.6, "texture_metallic");
   
+  // set u_IsLight to true for the light part of the lamp
   gl.uniform1i(u_IsLight, true);	
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+7.5, z+0.0);
@@ -449,7 +477,8 @@ function draw_lamp(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseText
 }
 
 function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, u_IsLight, x, y, z, y_rotate) {
-	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // draw the TV object
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 2.0, 0.25, 4.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
@@ -465,8 +494,9 @@ function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextur
   g_modelMatrix.translate(x-0.25, y+1.5, z+0.0);
   drawBox(gl, n, 0.5, 4.0, 6.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_matte");
   
+  // if TV light is being used display the TV screen
   if (use_tv_light){
-	   gl.uniform1i(u_IsLight, true);	
+	  gl.uniform1i(u_IsLight, true);	
 	  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
       g_modelMatrix.translate(x-0.50, y+2.0, z+0.0);
       drawBox(gl, n, 0.1, 3.0, 5.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,1.0,1.0,1.0, "texture_display");
@@ -475,14 +505,15 @@ function draw_tv(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextur
 }
 
 function draw_rug(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
-	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // draw rug object
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
-  drawBox(gl, n, 8.0, 0.05, 12.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.0,0.0, "texture_carpet");
-  
+  drawBox(gl, n, 8.0, 0.05, 12.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.0,0.0,0.0, "texture_carpet"); 
 }
 
 function draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) {
-	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // draw arm chair object
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 3.5, 2.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.4,1.0, "texture_chair");
   
@@ -501,7 +532,8 @@ function draw_arm_chair(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_Us
 }
 
 function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate, drawer_translate) { 
-	g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // draw cupboard object
+  g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 3.5, 1.0, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
@@ -535,6 +567,7 @@ function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_Use
   drawBox(gl, n, 3.5, 0.1, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
+  // pass the drawer_translate value to ensure the drawer is moved a specified amount
   g_modelMatrix.translate(x+0.0, y+1.2, z+0.0+drawer_translate);
   drawBox(gl, n, 3.5, 0.1, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
   
@@ -568,11 +601,11 @@ function draw_cupboard(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_Use
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-1.65, y+5.2, z+0.0+drawer_translate);
-  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");
-  
+  drawBox(gl, n, 0.1, 1.0, 3.1, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.4,0.2,0.0, "texture_dark");  
 }
 
 function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) { 
+  // draw cabinet object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 7.0, 0.25, 3.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
@@ -600,12 +633,13 @@ function draw_cabinet(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseT
   
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+1.75, y+0.0, z+1.50);
+  // pass the cabinet angle value to ensure the cabinet drawer is rotated the specified amount
   g_modelMatrix.rotate(cabinet_angle, 1.0, 0.0, 0.0);
   drawBox(gl, n, 3.25, 3.25, 0.15, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.6,0.4,0.2, "texture_brown");
-  
 }
 
 function draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate) { 
+  // draw pool table object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x+0.0, y+0.0, z+0.0);
   drawBox(gl, n, 1.0, 3.0, 1.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
@@ -645,10 +679,10 @@ function draw_pool_table(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_U
   g_modelMatrix.translate(x+10.75, y+3.0, z+2.5);
   g_modelMatrix.rotate(-15.0,0.0,0.0,1.0);
   drawBox(gl, n, 0.75, 2.0, 8.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.2,0.2,0.2, "texture_black");
-
 }
 
 function draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate){
+  // draw walls and floor
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-2.5, y+0.0, z+5.0);
   drawBox(gl, n, 50.0, 0.0, 45.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.76,0.76,0.64, "texture_floor");
@@ -663,26 +697,28 @@ function draw_walls_and_floor(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix
 }
 
 function draw_poster(gl, n, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, x, y, z, y_rotate){
+  // draw poster object
   g_modelMatrix.setRotate(y_rotate, 0.0, 1.0, 0.0);
   g_modelMatrix.translate(x-12.5, y+2.0, z-17.4);
   drawBox(gl, n, 5.0, 8.0, 0.0, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures,0.76,0.76,0.64, "texture_poster");
 }
 
-var g_matrixStack = []; // Array for storing a matrix
-function pushMatrix(m) { // Store the specified matrix to the array
+var g_matrixStack = []; // array for storing matrix stack
+function pushMatrix(m) { // push the specified matrix to the stack
   var m2 = new Matrix4(m);
   g_matrixStack.push(m2);
 }
 
-function popMatrix() { // Retrieve the matrix from the array
+function popMatrix() { // retreive the top matrix from the stack
   return g_matrixStack.pop();
 }
 
-var g_normalMatrix = new Matrix4();  // Coordinate transformation matrix for normals
+var g_normalMatrix = new Matrix4();  // local model matrix for normals
 
-// Draw rectangular solid
+// draw box
 function drawBox(gl, n, width, height, depth, viewProjMatrix, u_MvpMatrix, u_NormalMatrix, u_UseTextures, r, g, b, texture_id) {
-  pushMatrix(g_modelMatrix);   // Save the model matrix
+  pushMatrix(g_modelMatrix);   // push the model matrix
+  // create a vertex colour matrix
     var colors = new Float32Array([
     r, g, b,   r, g, b,   r, g, b,  r, g, b,     // v0-v1-v2-v3 front
     r, g, b,   r, g, b,   r, g, b,  r, g, b,      // v0-v3-v4-v5 right
@@ -693,59 +729,63 @@ function drawBox(gl, n, width, height, depth, viewProjMatrix, u_MvpMatrix, u_Nor
  ]);
  
     if (!initArrayBuffer(gl, 'a_Color', colors, 3)) return -1;
-    // Scale a cube and draw
+    // scale the cube and draw
     g_modelMatrix.scale(width, height, depth);
-    // Calculate the model view project matrix and pass it to u_MvpMatrix
+    // calculate the model view project matrix and pass it to u_MvpMatrix
     g_mvpMatrix.set(viewProjMatrix);
     g_mvpMatrix.multiply(g_modelMatrix);
     gl.uniformMatrix4fv(u_MvpMatrix, false, g_mvpMatrix.elements);
-    // Calculate the normal transformation matrix and pass it to u_NormalMatrix
+    // calculate the normal transformation matrix and pass it to u_NormalMatrix
     g_normalMatrix.setInverseOf(g_modelMatrix);
     g_normalMatrix.transpose();
     gl.uniformMatrix4fv(u_NormalMatrix, false, g_normalMatrix.elements);
-    // Draw
-	
+    // draw
 	if (texture_id != ""){
-		var Cubetexture = gl.createTexture();   // Create a texture object
+		// if texture_id is given
+		var Cubetexture = gl.createTexture();   // create a texture object
 		if (!Cubetexture) {
 		  console.log('Failed to create the texture object');
 		  return false;
 		}
 
-	  // Get the storage location of u_Sampler
+	  // get the storage location of u_Sampler
 		var u_Sampler = gl.getUniformLocation(gl.program, 'u_Sampler');
 		if (!u_Sampler) {
 		  console.log('Failed to get the storage location of u_Sampler');
 		  return false;
 		}
+		// set u_UseTextures to true
 		gl.uniform1i(u_UseTextures, true);			
+		// draw with textures
 		loadTexAndDraw(gl, n, Cubetexture, u_Sampler, texture_id);
 	} else {
+		// otherwise draw with colour
+		// set u_UseTextures to false
 		gl.uniform1i(u_UseTextures, false);
 		gl.drawElements(gl.TRIANGLES, n, gl.UNSIGNED_BYTE, 0);
 	}
 	
-  
-	g_modelMatrix = popMatrix();   // Retrieve the model matrix
+	g_modelMatrix = popMatrix();   // retrieve the model matrix
 }
 
 function loadTexAndDraw(gl, n, texture, u_Sampler, texture_id) {
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1); // Flip the image's y axis
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1); // flip the image's y axis
 
-  // Enable texture unit0
+  // enable texture unit0
   gl.activeTexture(gl.TEXTURE0);
 
-  // Bind the texture object to the target
+  // bind the texture object to the target
   gl.bindTexture(gl.TEXTURE_2D, texture);
 
-  // Set the texture image
+  // set the texture image
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, document.getElementById(texture_id));
+  // set the texturing parameters
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-  // Assign u_Sampler to TEXTURE0
+  // assign u_Sampler to TEXTURE0
   gl.uniform1i(u_Sampler, 0);
 
-  // Draw the textured cube
+  // draw the textured cube
   gl.drawElements(gl.TRIANGLES, n, gl.UNSIGNED_BYTE, 0);
 }
